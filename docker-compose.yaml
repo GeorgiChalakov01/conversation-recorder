@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  web:
+    build: .
+    container_name: conversation-recorder
+    environment:
+      - VIRTUAL_HOST=recorder.gchalakov.com
+      - LETSENCRYPT_HOST=recorder.gchalakov.com
+    networks:
+      - net
+    restart: unless-stopped
+
+networks:
+  net:
+    external: true

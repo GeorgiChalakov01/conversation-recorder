@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Conversation Recorder</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.0/FileSaver.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        #startButton {
+            font-size: 24px;
+            padding: 20px 40px;
+            margin: 20px;
+            cursor: pointer;
+        }
+        .control-group {
+            margin: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        #status {
+            margin: 20px;
+            font-size: 18px;
+        }
+        #downloadLink {
+            display: none;
+            margin: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <button id="startButton">Start</button>
+    <div class="control-group">
+        <button id="stopButton" style="display: none;">Stop</button>
+        <button id="pauseButton" style="display: none;">Pause</button>
+    </div>
+    <div id="status"></div>
+    <a id="downloadLink">Download Recordings</a>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let isPaused = false;
+        let partNumber = 1;
+        let currentSpeaker = 'teacher';
+        const recordings = [];
+        let mediaStream;
+
+        document.getElementById('startButton').onclick = async function() {
+            if (this.textContent === 'Start') {
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(mediaStream);
+                    
+                    mediaRecorder.ondataavailable = (e) => {
+                        audioChunks.push(e.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        if (audioChunks.length > 0) {
+                            const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+                            recordings.push({ 
+                                name: `${partNumber}-${currentSpeaker}`,
+                                blob: blob
+                            });
+                            audioChunks = [];
+                        }
+
+                        if (isRecording) {
+                            currentSpeaker = currentSpeaker === 'teacher' ? 'student' : 'teacher';
+                            partNumber++;
+                            mediaRecorder.start();
+                            updateStatus();
+                        } else {
+                            createZipAndDownload();
+                            mediaStream.getTracks().forEach(track => track.stop());
+                            resetUI();
+                        }
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    this.textContent = 'Student';
+                    updateStatus();
+                    document.getElementById('stopButton').style.display = 'inline';
+                    document.getElementById('pauseButton').style.display = 'inline';
+                } catch (err) {
+                    console.error('Error accessing microphone:', err);
+                    alert('Error accessing microphone. Please allow permission.');
+                }
+            } else {
+                mediaRecorder.stop();
+            }
+        };
+
+        document.getElementById('stopButton').onclick = function() {
+            isRecording = false;
+            mediaRecorder.stop();
+        };
+
+        document.getElementById('pauseButton').onclick = function() {
+            if (isPaused) {
+                mediaRecorder.resume();
+                isPaused = false;
+                this.textContent = 'Pause';
+                updateStatus();
+            } else {
+                mediaRecorder.pause();
+                isPaused = true;
+                this.textContent = 'Resume';
+                document.getElementById('status').textContent = 'Paused';
+            }
+        };
+
+        function updateStatus() {
+            document.getElementById('status').textContent = 
+                `Recording ${partNumber}-${currentSpeaker}...`;
+        }
+
+        async function createZipAndDownload() {
+            const zip = new JSZip();
+            
+            recordings.forEach((rec) => {
+                const ext = getFileExtension(rec.blob.type);
+                zip.file(`${rec.name}.${ext}`, rec.blob);
+            });
+
+            const content = await zip.generateAsync({ type: 'blob' });
+            saveAs(content, 'recordings.zip');
+            
+            // Reset for new session
+            partNumber = 1;
+            currentSpeaker = 'teacher';
+            recordings.length = 0;
+        }
+
+        function getFileExtension(mimeType) {
+            if (!mimeType) return 'webm';
+            const parts = mimeType.split('/');
+            if (parts.length > 1) {
+                const subparts = parts[1].split(';');
+                return subparts[0] || 'webm';
+            }
+            return 'webm';
+        }
+
+        function resetUI() {
+            document.getElementById('stopButton').style.display = 'none';
+            document.getElementById('pauseButton').style.display = 'none';
+            document.getElementById('startButton').textContent = 'Start';
+            document.getElementById('status').textContent = '';
+        }
+    </script>
+</body>
+</html>
